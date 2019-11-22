@@ -6,23 +6,18 @@
 #include "vector"
 #include "stdio.h"
 
-/**
-* DEADLOCK_CHECK_GAP_TIME should be greater than CROSS_TIME
-* or deadlock would be checked even if there was a BAT crossing
-* in which a deadlock maybe declared even though it might have
-* been solved(The BAT is crossing but not deadlocked).
-*/
 #define DIRECTIONS 4
 #define CROSS_TIME 1
-#define DEADLOCK_CHECK_GAP_TIME 2
+#define DEADLOCK_CHECK_GAP_TIME 1
 
 using namespace std;
 
 enum direction {NORTH, EAST, SOUTH, WEST};
 
-int BATs_counter, directions_count[DIRECTIONS] = {0};
+int BATs_counter, directions_counter[DIRECTIONS] = {0};
 pthread_cond_t direction_queues[DIRECTIONS], direction_first_queues[DIRECTIONS];
 pthread_mutex_t manager_mutex, directions_mutex[DIRECTIONS];
+bool is_crossing, is_deadlock;
 
 /**
 * BAT struct which represents the Bidirectional Autonomous Trolley in which it
@@ -57,6 +52,8 @@ void leave(BAT* b);
 BATMAN::BATMAN()
 {
     BATs_counter = 0;
+    is_crossing = false;
+    is_deadlock = false;
     for (unsigned int i = 0; i < DIRECTIONS; i++) {
         pthread_cond_init(&direction_queues[i], NULL);
         pthread_cond_init(&direction_first_queues[i], NULL);
@@ -131,18 +128,19 @@ void initialize_BAT_number(int* number) {
 }
 
 /**
-* Check for deadlock and solve it if exists.
+* Checks for deadlock and solve it if exists.
 */
 void check() {
-    if (directions_count[NORTH] && directions_count[EAST]
-        && directions_count[SOUTH] && directions_count[WEST]) {
+    if (directions_counter[NORTH] && directions_counter[EAST]
+        && directions_counter[SOUTH] && directions_counter[WEST] && !is_crossing) {
             printf("DEADLOCK: BAT jam detected, signalling North to go\n");
+            is_deadlock = true;
             pthread_cond_signal(&direction_first_queues[NORTH]);
         }
 }
 
 /**
-* The thread which is responisible for calling check function
+* The thread which is responsible for calling check function
 * every DEADLOCK_CHECK_GAP_TIME seconds.
 */
 void* deadlock_checker(void* arguments) {
@@ -154,7 +152,7 @@ void* deadlock_checker(void* arguments) {
 }
 
 /**
-* Change from direction enum to string to be printed.
+* Changes a direction enum to a string to be printed.
 * @param BAT_direction; the direction to be mapped to a string.
 */
 char const* direction_enum_to_string(direction BAT_direction) {
@@ -173,26 +171,25 @@ char const* direction_enum_to_string(direction BAT_direction) {
 * @param b the bat that arrived recently.
 */
 void arrive(BAT* b) {
-    direction BAT_direction = b -> original_direction;
-    pthread_mutex_lock(&directions_mutex[BAT_direction]);
-    directions_count[BAT_direction]++;
+    pthread_mutex_lock(&directions_mutex[b -> original_direction]);
+    directions_counter[b -> original_direction]++;
 
     printf("BAT %d from %s arrives at crossing\n", b -> number,
-        direction_enum_to_string(BAT_direction));
+        direction_enum_to_string(b -> original_direction));
 
-    if (directions_count[BAT_direction] > 1) {
-        pthread_cond_wait(&direction_queues[BAT_direction],
-            &directions_mutex[BAT_direction]);
+    if (directions_counter[b -> original_direction] > 1) {
+        pthread_cond_wait(&direction_queues[b -> original_direction],
+            &directions_mutex[b -> original_direction]);
     }
+
 
     pthread_mutex_lock(&manager_mutex);
-    int right_direction = (BAT_direction + DIRECTIONS - 1) % DIRECTIONS;
-    if (directions_count[right_direction] > 0) {
-        pthread_cond_wait(&direction_first_queues[BAT_direction], &manager_mutex);
+    int right_direction = (b -> original_direction + DIRECTIONS - 1) % DIRECTIONS;
+    if (directions_counter[right_direction] > 0) {
+        pthread_cond_wait(&direction_first_queues[b -> original_direction], &manager_mutex);
     }
-
     pthread_mutex_unlock(&manager_mutex);
-    pthread_mutex_unlock(&directions_mutex[BAT_direction]);
+    pthread_mutex_unlock(&directions_mutex[b -> original_direction]);
 }
 
 /**
@@ -201,9 +198,11 @@ void arrive(BAT* b) {
 */
 void cross(BAT* b) {
     pthread_mutex_lock(&manager_mutex);
-    sleep(CROSS_TIME);
+    is_crossing = true;
     printf("BAT %d from %s crossing\n", b -> number,
         direction_enum_to_string(b -> original_direction));
+    sleep(CROSS_TIME);
+    is_crossing = false;
     pthread_mutex_unlock(&manager_mutex);
 }
 
@@ -212,15 +211,14 @@ void cross(BAT* b) {
 * @param b the bat currently leaving.
 */
 void leave(BAT* b) {
-    direction BAT_direction = b -> original_direction;
-    pthread_mutex_lock(&directions_mutex[BAT_direction]);
-    directions_count[BAT_direction]--;
+    pthread_mutex_lock(&directions_mutex[b -> original_direction]);
+    directions_counter[b -> original_direction]--;
 
     printf("BAT %d from %s leaving crossing\n", b -> number,
         direction_enum_to_string(b -> original_direction));
 
-    int left_direction = (BAT_direction + DIRECTIONS + 1) % DIRECTIONS;
+    int left_direction = (b -> original_direction + DIRECTIONS + 1) % DIRECTIONS;
     pthread_cond_signal(&direction_first_queues[left_direction]);
-    pthread_cond_signal(&direction_queues[BAT_direction]);
-    pthread_mutex_unlock(&directions_mutex[BAT_direction]);
+    pthread_cond_signal(&direction_queues[b -> original_direction]);
+    pthread_mutex_unlock(&directions_mutex[b -> original_direction]);
 }
