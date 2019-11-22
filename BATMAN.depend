@@ -1,0 +1,18 @@
+# depslib dependency file v1.0
+1574444411 source:/home/mohamed/Desktop/BATMAN/src/BATMAN.cpp
+	"BATMAN.h"
+	"pthread.h"
+	"unistd.h"
+	"string"
+	"iostream"
+	"vector"
+	"stdio.h"
+
+1574424154 /home/mohamed/Desktop/BATMAN/include/BATMAN.h
+
+1574424180 source:/home/mohamed/Desktop/BATMAN/src/main.cpp
+	"main.h"
+	"BATMAN.h"
+
+1574347527 /home/mohamed/Desktop/BATMAN/include/main.h
+
